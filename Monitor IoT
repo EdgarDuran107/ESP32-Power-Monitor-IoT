@@ -1,0 +1,125 @@
+#Codigo creado con micropython para una esp32 c6 mediante thonny
+
+import machine
+import time
+import math
+import network
+import urequests
+import ujson
+
+# Configura el pin ADC  VOLTAJE
+adc = machine.ADC(machine.Pin(34)) # GPI34
+adc.atten(machine.ADC.ATTN_11DB)  # Rango de 0-3.3V
+
+# Configuración del pin ADC CORRIENTE
+adc_pin = machine.ADC(machine.Pin(35))          # GPIO4
+adc_pin.atten(machine.ADC.ATTN_11DB)    # Para rango completo de 0–3.3V
+adc_pin.width(machine.ADC.WIDTH_12BIT) # Resolución de 12 bits (0–4095)
+
+# Resistencias del divisor de voltaje
+R1 = 6800.0
+R2 = 12000.0
+
+# Parámetros de calibración  
+CALIBRATION = 220    
+ADC_TO_VOLT = (3.3 / 4095) * CALIBRATION  # Factor de conversión precalculado
+
+# Configuración WiFi
+SSID = "NOMBRE DE LA RED"
+PASSWORD = "CONTRASEÑA DE LA RED"
+
+# URL de destino (API/Servidor)
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxWv-5BH7NQ-Ysp_MQ4ukRaMumQVOPiFC0w8MxjGvxV6Eu9536w1jW-kuRcNfhH6tmUvg/exec"
+
+# Conexión WiFi
+wifi = network.WLAN(network.STA_IF)
+wifi.active(True)
+wifi.connect(SSID, PASSWORD)
+
+print("Conectando a WiFi...", end="")
+while not wifi.isconnected():
+    print(".", end="")
+    time.sleep(0.5)
+print("\nConectado:", wifi.ifconfig())
+
+# Loop principal
+while True:
+    # Generar datos simulados
+    def read_voltage(samples=500, delay_us=50):
+        sum_readings = 0
+        sum_squared = 0
+
+        for _ in range(samples):
+            reading = adc.read()
+            sum_readings += reading
+            sum_squared += reading ** 2
+            time.sleep_us(delay_us)
+
+        mean = sum_readings / samples
+        mean_squared = sum_squared / samples
+        variance = mean_squared - mean ** 2
+        rms = math.sqrt(variance)
+        voltage = rms * ADC_TO_VOLT
+        return voltage
+    
+    voltaje_ac = read_voltage()
+    
+    adc_value = adc_pin.read()
+    adc_voltage = adc_value * (3.3 / 4095.0)
+    current_voltage = (adc_voltage * (R1 + R2) / R2)
+    current = -(current_voltage - 2.5) / 0.100  
+    Potencia=current*voltaje_ac
+    print("CORRIENTE", current,"A\nVOLTAJE", voltaje_ac,"V\nPOTENCIA",Potencia)
+
+    # Crear JSON
+    data = {
+        "current": current,
+        "voltaje_ac": voltaje_ac,
+        "Potencia": Potencia
+    }
+    
+    try:
+        # Enviar POST
+        headers = {"Content-Type": "application/json"}
+        # Se pasa el diccionario directamente a 'json='
+        response = urequests.post(SCRIPT_URL, json=data, headers=headers)
+
+        print("Respuesta HTTP:", response.status_code)
+        print("Respuesta del servidor:", response.text)
+        response.close()
+    except Exception as e:
+        print("Error en la petición:", e)
+
+    time.sleep(10)  # esperar 10 segundos antes de enviar de nuevo
+
+#-------------------------------------------#
+# def read_voltage(samples=500, delay_us=50):
+#     sum_readings = 0
+#     sum_squared = 0
+# 
+#     for _ in range(samples):
+#         reading = adc.read()
+#         sum_readings += reading
+#         sum_squared += reading ** 2
+#         time.sleep_us(delay_us)
+# 
+#     mean = sum_readings / samples
+#     mean_squared = sum_squared / samples
+#     variance = mean_squared - mean ** 2
+#     rms = math.sqrt(variance)
+#     voltage = rms * ADC_TO_VOLT
+#     return voltage
+# 
+# while True:
+#     voltaje_ac = read_voltage()
+#     #print("Voltaje AC estimado: {:.2f} V".format(voltaje_ac))
+#     
+#     adc_value = adc_pin.read()
+#     adc_voltage = adc_value * (3.3 / 4095.0)
+#     current_voltage = (adc_voltage * (R1 + R2) / R2)
+#     current = -(current_voltage - 2.5) / 0.100  
+#    # print(current_voltage)
+#     Potencia=current*voltaje_ac
+#     print("Current Value:", round(current, 3),"A\nVoltaje AC:", round(voltaje_ac,3),"V\nPotencia:", round(Potencia,3), "W")
+#     time.sleep(2)
+#     
